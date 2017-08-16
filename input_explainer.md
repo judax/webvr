@@ -57,13 +57,11 @@ For non-exclusive sessions, users may interact directly with a Magic Window usin
 
 Obviously these all represent wildly different styles of input, which can be very difficult for individual applications to make sense of in a consistent manner. The primary goal of the input API is to provide a high level abstraction of all these input sources. As with non-VR/AR WebGL content the application is responsible for all rendering and hit testing.
 
-To accomplish this, each of these categories of inputs are surfaced by the input API in several ways:
+To accomplish this, each of these categories of inputs are surfaced by the input API in a couple of ways:
 
 **Polling:** For rendering of cursors and tracked controllers each frame, an imperative model is provided that allows the application to poll a predicted controller pose. Polling also provides that frame's controller element states.
 
 **Gesture Events:** To handle actions with the highest cross-device compatibility, the app can register event listeners for when the user performs common actions, such as "select". These events are treated as user gestures by the UA.
-
-**State Events:** An advanced app can also register event listeners to know when the user interacts with individual elements of a VR/AR input source, such as the touchpad or thumbstick on a motion controller. These events are treated as user gestures by the UA.
 
 Aside from generating high level gestures, the input API does not attempt to describe the state of input sources that are already surfaced by the UA, such as mouse, keyboard, touch, stylus, or gamepad inputs.
 
@@ -284,27 +282,6 @@ function updateMovement(controller) {
 }
 ```
 
-### State events
-These events communicate simple input state changes as they happen. Examples include controllers being connected and disconnected or buttons and triggers being pressed. No semantic meaning (e.g. "select") is attributed to the state change.
-
-```js
-function onVrStart() {
-  vrSession.addEventListener("inputtouchstart", onTouchStart);
-  vrSession.addEventListener("inputtouchend", onTouchEnd);
-}
-
-function onTouchStart(event) {
-  if (event.element == event.inputSource.touchpad)
-    displayMenuOverlay();
-}
-
-function onTouchEnd(event) {
-  if (event.element == event.inputSource.touchpad)
-    hideMenuOverlay();
-}
-
-```
-
 ### Mousing along the geometry of the scene
 In traditional 2D UI, mouse movement on the plane of the desk maps directly to the plane of the screen, and is generally independent of the content over which the cursor is moved.  In contrast, mouse movement in VR/AR must translate 2D physical mouse movements into 3D cursor changes, which often requires knowledge of the app's scene geometry.  For example, an app may wish to move its 3D mouse cursor at a slower angular velocity over distant content, or snap the cursor's movement to the XY axes of the plane under the cursor.
 
@@ -346,8 +323,11 @@ enum VRHandedness {
 
 interface VRController : VRInputSource {
   readonly attribute VRHandedness handedness;
+
+  // TODO: Better names for these two properties.
   readonly attribute boolean supportsPointing; 
-  readonly attribute boolean supportsGrabbing; // TODO: Something better.
+  readonly attribute boolean supportsGrabbing; 
+
   readonly attribute VRControllerElementMap elements;
   readonly attribute VRControllerMesh mesh;
 };
@@ -393,11 +373,6 @@ partial interface VRSession {
   attribute EventHandler oncontrolleradded;
   attribute EventHandler oncontrollerremoved;
 
-  attribute EventHandler oninputpressed;
-  attribute EventHandler oninputreleased;
-  attribute EventHandler oninputtouchstart;
-  attribute EventHandler oninputtouchend;
-
   FrozenArray<VRController> getControllers();
 };
 
@@ -414,19 +389,6 @@ interface VRInputSourceEvent : Event {
 dictionary VRInputSourceEventInit : EventInit {
   required VRPresentationFrame frame;
   required VRInputSource inputSource;
-};
-
-[Constructor(DOMString type, VRControllerInputStateEventInit eventInitDict)]
-interface VRControllerElementEvent : Event {
-  readonly attribute VRPresentationFrame frame;
-  readonly attribute VRController inputSource;
-  readonly attribute VRControllerElement element;
-};
-
-dictionary VRControllerElementEventInit : EventInit {
-  required VRPresentationFrame frame;
-  required VRController inputSource;
-  required VRControllerElement element;
 };
 
 [Constructor(DOMString type, VRControllerInputStateEventInit eventInitDict)]
