@@ -43,6 +43,7 @@ These input sources let users take actions, but don't provide their own pointing
   * Single button on the headset (Cardboard)
   * Simple handheld Bluetooth clicker with no pointing ray (Cardboard, HoloLens clicker)
   * Optical hand tracking of varying levels of detail (HoloLens hand, Leap Motion)
+  * System voice commands (HoloLens/Windows MR "Select" keyword)
   * Traditional [gamepads](https://www.w3.org/TR/gamepad/)
   * Mouse (in exclusive sessions)
 
@@ -72,14 +73,17 @@ Whether the application is using an event or polling based input system, trackin
 
 If an input source can be tracked the `VRInputPose` will provide a `gripPoseMatrix` to indicate its position and orientation. This will be `null` if the input source isn't trackable or has temporarily lost tracking. The `gripPoseMatrix` is a transform into a space where if the user was holding a straight rod in their hand it would be aligned with the Y axis and the origin rests at their palm. This enables developers to properly render a virtual object held in the user's hand. For example, a sword would be positioned so that the blade points directly down the positive Y axis and the center of the handle is at the origin.
 
-If an input source has the capability to provide its own pointing ray, it may provide a `pointerPoseMatrix`. The pointing ray should follow platform guidelines if there are any, for example emerging from the tip of the controller at an angle allowing a comfortable range of motion. This represents a transform to be applied to a ray which points from the origin down the negative Z axis, and indicates where the input source is "pointing". In absence of platform guidance, the pointer ray should most likely point in the same direction as the user's index finger if it was outstretched while holding the controller. If a pointer ray cannot be determined because the source has lost tracking or the source does not have pointing capability, this will be `null`.
+An input source will also provide its own preferred pointing ray through `pointerPoseMatrix`:
+* For pointing-supported input sources, this will be a ray that represents the source's preferred targeting ray, pointing down the negative Z axis.  The ray should follow platform-specific guidelines if there are any, for example emerging from the tip of the controller at an angle allowing a comfortable range of motion. In the absence of hardware-specific guidance, the pointer ray should most likely point in the same direction as the user's index finger if it was outstretched while holding the controller. If the source has lost tracking, this will be `null`.
+* For gaze-targeted input sources, this will be the user's head ray.
+* For Magic Window input sources, this will be the ray from the user's 2D pointer location projected into the scene.
 
 ### Gesture events
 Applications that want to work on the widest variety of platforms and devices will want to rely heavily on gesture events. Gesture events communicate semantically significant actions performed in VR/AR, such as making a selection.
 
 The exact inputs that trigger these events are controlled by the UA and dependent on the hardware that the user has. For example, to perform a "select" gesture on a variety of potential hardware:
-* On Daydream the user would click the controller touchpad.
-* On HoloLens the user would performs a hand gesture.
+* On Daydream, the user would click the controller touchpad.
+* On HoloLens, the user would perform a tap with their index finger or say the system "Select" keyword.
 * On a Vive controller, Oculus Touch or Windows MR controller, the user would pull the trigger.
 * On Cardboard the user would press the headsets button.
 
@@ -89,74 +93,43 @@ function onVrStart() {
 }
 
 function onSelectGesture(event) {
-  // Many apps will switch their targeting mode based on
-  // the last input source to receive a "select" gesture.
-  updateTargetingMode(event.inputSource);
+  // Many apps will switch their cursor mode based on
+  // the last input source to receive a gesture, such as "select".
+  updateCursorMode(event.inputSource);
 
-  // After updating the targeting mode, hit-test
-  // and take action on the hit object.
-  let targetingRay = getTargetingRay(event.frame, event.inputSource);
-
-  // Ray cast into scene with the pointer to determine if anything was hit.
-  let selectedObject = scene.rayPick(targetingRay);
-  if (selectedObject) {
-    onSelection(selectedObject);
+  // Hit-test and take action on the hit object.
+  let inputPose = event.frame.getInputPose(event.inputSource, vrFrameOfRef);
+  if (inputPose && inputPose.pointerPoseMatrix) {
+    // Ray cast into scene with the pointer to determine if anything was hit.
+    let selectedObject = scene.rayPick(inputPose.pointerPoseMatrix);
+    if (selectedObject) {
+      onSelection(selectedObject);
+    }
   }
 }
 ```
 
-### Choosing a targeting mode
-To give users confidence in their input actions, most VR/AR apps will render a cursor and possibly a ray to visualize what the will be targeted if they perform a "select" gesture.
+### Choosing a cursor mode
+To give users confidence in their input actions, most VR/AR apps will render a cursor and possibly a ray to visualize what will be targeted if they perform a "select" gesture.
 
-When hit-testing, the application should take into consideration the input sources the user is using and choose an appropriate targeting mode:
-* When the user is using pointing-capable controllers, the app can hit-test based on that controller's pointing ray.
-* In exclusive sessions when the user is using a gaze-targeted controller such as a gamepad, the app should hit-test based on the user's head ray.
-* In non-exclusive Magic Window sessions, the app should hit-test based on the 2D screen-space point for the action.
-
-```js
-let targetingMode = vrSession.exclusive ? "gaze" : "screen";
-
-function updateTargetingMode(inputSource)
-  if (!vrSession.exclusive) { // Magic Window
-    targetingMode = "screen";
-  } else if (inputSource.supportsPointing) { // Pointing devices
-    targetingMode = "pointing";
-  } else { // Clicker devices
-    targetingMode = "gaze";
-  }
-}
-
-function getTargetingRay(frame, inputSource) {
-  let targetingRay = null;
-
-  if (targetingMode == "pointing") {
-    let inputPose = frame.getInputPose(inputSource, vrFrameOfRef);
-    if (inputPose) {
-      // Ray cast into scene with the pointer to determine if anything was hit.
-      targetingRay = inputPose.pointerPoseMatrix;
-    }
-  } else if (targetingMode == "gaze") {
-    let devicePose = frame.getDevicePose(vrFrameOfRef);
-    if (devicePose) {
-      // Ray cast into scene with the pointer to determine if anything was hit.
-      targetingRay = devicePose.poseModelMatrix;
-    }
-  } else {
-    // TODO: Provide app easy access to a Magic Window
-    // ray generated from the screen-space XY coordinate.
-  }
-
-  return targetingRay;
-}
-```
-
-### Cursor and ray rendering
-Based on the app's chosen targeting mode, it can then render the appropriate cursors and rays to give users confidence in what they will take action on:
+The application should take into consideration the most recently used input sources and choose an appropriate cursor mode:
 * When the app is in "pointing" mode, it should render a ray originating from that controller, optionally with a cursor shown at the point of ray intersection with the scene.
 * When the app is in "gaze" mode, it should render just a cursor, as a ray emitting from the user's head would be visually confusing.
 * When the app is in "screen" mode, it should not render a visual here, as the Magic Window input will likely be coming from a touchscreen or mouse, and such a gaze cursor is nonsensical.
 
 ```js
+let cursorMode = vrSession.exclusive ? "gaze" : "screen";
+
+function updateCursorMode(inputSource)
+  if (!vrSession.exclusive) { // Magic Window
+    cursorMode = "screen";
+  } else if (inputSource.supportsPointing) { // Pointing devices
+    cursorMode = "pointing";
+  } else { // Clicker devices
+    cursorMode = "gaze";
+  }
+}
+
 function onVRFrame(vrFrame) {
   // Update the transforms for any rendered controllers.
   updateControllers(vrFrame);
@@ -166,12 +139,12 @@ function onVRFrame(vrFrame) {
   drawScene(vrFrame);
 
   // Draw the appropriate cursors and rays over the scene,
-  // given the current targeting mode.
+  // given the current cursor mode.
   drawCursors(vrFrame);
 }
 
 function drawCursors(vrFrame) {
-  if (targetingMode == "pointing") {
+  if (cursorMode == "pointing") {
     let controllers = vrFrame.session.getControllers();
 
     // When tracked controllers are present, draw a pointer for each of them.
@@ -186,7 +159,7 @@ function drawCursors(vrFrame) {
         drawCursor(vrFrame.views, inputPose.pointerPoseMatrix);
       }
     }
-  } else if (targetingMode == "gaze") {
+  } else if (cursorMode == "gaze") {
     // When in gaze mode, draw a gaze cursor.
     let devicePose = vrFrame.getDevicePose(vrFrameOfRef);
     if (devicePose) {
@@ -333,7 +306,13 @@ function onTouchEnd(event) {
 ```
 
 ### Mousing along the geometry of the scene
-TODO: Fill this in, explaining why the UA cannot provide a platform mouse ray without knowledge of the app's scene.
+In traditional 2D UI, mouse movement on the plane of the desk maps directly to the plane of the screen, and is generally independent of the content over which the cursor is moved.  In contrast, mouse movement in VR/AR must translate 2D physical mouse movements into 3D cursor changes, which often requires knowledge of the app's scene geometry.  For example, an app may wish to move its 3D mouse cursor at a slower angular velocity over distant content, or snap the cursor's movement to the XY axes of the plane under the cursor.
+
+As 3D mouse cursors require such an app-driven feedback loop with scene content, tracking such a cursor based on mouse motion is out of scope for `pointerPoseMatrix` as currently defined.  Instead, mouse left-clicks cause `select` gestures with a gaze-targeted or Magic Window `pointerPoseMatrix`.  This matches all other contextless input sources described above, where the UA tosses a single natural pointing ray over the wall to the app without knowledge of the scene content, similar to traditional 2D mouse UI.  
+
+Apps or middleware may then choose to implement a 3D mouse cursor by requesting pointer lock and then handling `mouseMove` events to accumulate a custom 3D cursor position over time, reacting to scene content as they see fit.
+
+TODO: Rationalize with onvrdisplaypointerrestricted from WebVR 1.1.
 
 ## Appendix A: I don’t understand why this is a new API. Why can’t we use…
 
