@@ -332,7 +332,7 @@ interface VRController : VRInputSource {
   readonly attribute VRControllerMesh mesh;
 };
 
-interface VRControllerInputMap {
+interface VRControllerElementMap {
   readonly maplike<DOMString, VRControllerElement>;
 };
 
